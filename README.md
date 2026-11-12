@@ -5,6 +5,8 @@ This workspace contains a small but complete e-commerce application, built to sa
 CSV, product search, a purchase flow with a fake payment, and a web interface for all of it. Everything runs locally
 in Docker.
 
+**The example CSV file was downloaded on Monday, January 9, at noon.**
+
 ## Folder overview
 
 | Folder              | What it is                                                                                                                                                                                                                          |
