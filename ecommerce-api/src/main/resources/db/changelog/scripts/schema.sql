@@ -53,7 +53,7 @@ CREATE TABLE products
 
     CONSTRAINT pk_products_id PRIMARY KEY (id),
     CONSTRAINT uq_products_sku UNIQUE (sku),
-    CONSTRAINT chk_products_sku_format CHECK (sku ~ '^[A-Z0-9]{1,10}$'),
+    CONSTRAINT chk_products_sku_format CHECK (sku ~ '^[A-Z0-9-]{1,10}$'),
     CONSTRAINT chk_products_price_positive CHECK (price > 0),
     CONSTRAINT chk_products_stock_non_negative CHECK (stock >= 0),
     CONSTRAINT chk_products_weight_positive CHECK (weight_kg IS NULL OR weight_kg >= 0),

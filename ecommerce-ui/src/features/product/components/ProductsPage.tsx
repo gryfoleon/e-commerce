@@ -1,5 +1,4 @@
 import Alert from '@mui/material/Alert'
-import AlertTitle from '@mui/material/AlertTitle'
 import Snackbar from '@mui/material/Snackbar'
 import Box from '@mui/material/Box'
 import { useState } from 'react'
@@ -15,7 +14,7 @@ import {
 import { useProductByIdQuery, useProductsQuery } from '../hooks/product.query'
 import { useProductFilterStore } from '../stores/product-filter.store'
 import type { Product, ProductInput } from '../types/product.types'
-import { toProductFilterParams } from '../util/product.utils'
+import { toCsvImportFailure, toProductFilterParams, type CsvImportFailure } from '../util/product.utils'
 import { ProductDeleteDialog } from './ProductDeleteDialog'
 import { ProductDetailDialog } from './ProductDetailDialog'
 import { ProductFilterBar } from './ProductFilterBar'
@@ -26,8 +25,6 @@ import { ProductTable } from './ProductTable'
 type Notice = { severity: 'success' | 'error'; message: string }
 
 type ScreenError = { title: string; details: string[] }
-
-const MAX_ERROR_DETAILS = 10
 
 const FORM_FIELDS = new Set<string>(['sku', 'name', 'description', 'category', 'price', 'stock', 'weightKg'])
 
@@ -52,7 +49,6 @@ const toScreenError = (error: unknown, fallback: string): ScreenError => {
   return { title: apiError.error || fallback, details }
 }
 
-
 interface ProductsPageProps {
   readonly onAddToCart?: (product: Product) => void
   readonly canAddToCart?: (product: Product) => boolean
@@ -60,9 +56,7 @@ interface ProductsPageProps {
 
 export const ProductsPage = ({ onAddToCart, canAddToCart }: ProductsPageProps = {}) => {
   const { applied, minStock, page, pageSize, setPage, setPageSize } = useProductFilterStore()
-  const { products, pageDetails, isFetching, isError } = useProductsQuery(
-    toProductFilterParams({ applied, minStock, page, pageSize })
-  )
+  const { products, pageDetails, isFetching, isError } = useProductsQuery(toProductFilterParams({ applied, minStock, page, pageSize }))
 
   const [viewing, setViewing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
@@ -70,7 +64,7 @@ export const ProductsPage = ({ onAddToCart, canAddToCart }: ProductsPageProps = 
   const [editing, setEditing] = useState<Product | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [importReport, setImportReport] = useState<CsvImportReport | null>(null)
-  const [importError, setImportError] = useState<ScreenError | null>(null)
+  const [importError, setImportError] = useState<CsvImportFailure | null>(null)
   const importMutation = useImportProductsCsvMutation()
   const deleteMutation = useDeleteProductMutation()
   const createMutation = useCreateProductMutation()
@@ -88,8 +82,7 @@ export const ProductsPage = ({ onAddToCart, canAddToCart }: ProductsPageProps = 
 
   const handleCreate = (input: ProductInput) => {
     const payload = JSON.stringify(input)
-    const idempotencyKey =
-      pendingCreate?.payload === payload ? pendingCreate.idempotencyKey : crypto.randomUUID()
+    const idempotencyKey = pendingCreate?.payload === payload ? pendingCreate.idempotencyKey : crypto.randomUUID()
     setPendingCreate({ payload, idempotencyKey })
     setFormErrors({})
     createMutation.mutate(
@@ -158,11 +151,12 @@ export const ProductsPage = ({ onAddToCart, canAddToCart }: ProductsPageProps = 
 
   const handleImport = (file: File) => {
     setImportError(null)
+    setImportReport(null)
     importMutation.mutate(
       { file },
       {
         onSuccess: ({ data }) => setImportReport(data),
-        onError: (error) => setImportError(toScreenError(error, 'The CSV file could not be imported.'))
+        onError: (error) => setImportError(toCsvImportFailure(getApiError(error), 'The CSV file could not be imported.'))
       }
     )
   }
@@ -176,20 +170,6 @@ export const ProductsPage = ({ onAddToCart, canAddToCart }: ProductsPageProps = 
         }}
         onImportCsv={handleImport}
       />
-      {importError && (
-        <Alert severity='error' onClose={() => setImportError(null)}>
-          <AlertTitle>{importError.title}</AlertTitle>
-          {importError.details.length > 0 && (
-            <Box component='ul' sx={{ m: 0, pl: 2 }}>
-              {importError.details.slice(0, MAX_ERROR_DETAILS).map((detail, index) => (
-                <li key={index}>{detail}</li>
-              ))}
-            </Box>
-          )}
-          {importError.details.length > MAX_ERROR_DETAILS &&
-            `…and ${importError.details.length - MAX_ERROR_DETAILS} more errors.`}
-        </Alert>
-      )}
       {isError && <Alert severity='error'>Could not load products.</Alert>}
       <ProductTable
         products={products}
@@ -221,7 +201,14 @@ export const ProductsPage = ({ onAddToCart, canAddToCart }: ProductsPageProps = 
         onSubmit={handleSubmit}
       />
       <ProductDeleteDialog product={deleting} isDeleting={deleteMutation.isPending} onClose={() => setDeleting(null)} onConfirm={handleDelete} />
-      <ProductImportResultDialog report={importReport} onClose={() => setImportReport(null)} />
+      <ProductImportResultDialog
+        report={importReport}
+        failure={importError}
+        onClose={() => {
+          setImportReport(null)
+          setImportError(null)
+        }}
+      />
       {importMutation.isPending && <Loader fullScreen label='Importing products' />}
       <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)}>
         {notice ? <Alert severity={notice.severity}>{notice.message}</Alert> : undefined}

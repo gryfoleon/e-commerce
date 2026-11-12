@@ -1,15 +1,11 @@
 import { z } from 'zod'
 
-const SKU_PATTERN = /^[A-Z0-9]{1,10}$/
+const SKU_PATTERN = /^[A-Z0-9-]{1,10}$/
 const PRICE_PATTERN = /^\d{1,10}(\.\d{1,2})?$/
 const WEIGHT_PATTERN = /^\d{1,5}(\.\d{1,3})?$/
 
 export const productFormSchema = z.object({
-  sku: z
-    .string()
-    .trim()
-    .min(1, 'SKU is required')
-    .regex(SKU_PATTERN, 'SKU must have 1 to 10 characters, only uppercase letters and digits'),
+  sku: z.string().trim().min(1, 'SKU is required').regex(SKU_PATTERN, 'SKU must have 1 to 10 characters, only uppercase letters, digits and hyphens'),
   name: z.string().trim().min(1, 'Name is required').max(255, 'Name must not exceed 255 characters'),
   description: z.string().max(5000, 'Description must not exceed 5000 characters'),
   category: z.string().trim().min(1, 'Category is required').max(100, 'Category must not exceed 100 characters'),

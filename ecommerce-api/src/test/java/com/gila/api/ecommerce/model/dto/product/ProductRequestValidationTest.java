@@ -51,7 +51,7 @@ class ProductRequestValidationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"rs001", "RS-001", "RS 001", "ABCDEFGHIJK", ""})
+    @ValueSource(strings = {"rs001", "RS 001", "ABCDEFGHIJK", ""})
     void create_invalidSku_isRejected(String sku) {
         assertThat(violatedFields(create(sku, BigDecimal.TEN, 1, null))).contains("sku");
     }
@@ -90,7 +90,7 @@ class ProductRequestValidationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"elec1", "ELEC-1", "ABCDEFGHIJK"})
+    @ValueSource(strings = {"elec1", "ABCDEFGHIJK"})
     void update_invalidSku_isRejected(String sku) {
         assertThat(violatedFields(update(sku))).contains("sku");
     }

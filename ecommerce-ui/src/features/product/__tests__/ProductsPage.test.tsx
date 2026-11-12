@@ -74,11 +74,7 @@ describe('ProductsPage', () => {
     renderApp()
     await screen.findByText('ELEC001')
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
-    expect(headers.slice(headers.indexOf('Description'), headers.indexOf('Price') + 1)).toEqual([
-      'Description',
-      'Category',
-      'Price'
-    ])
+    expect(headers.slice(headers.indexOf('Description'), headers.indexOf('Price') + 1)).toEqual(['Description', 'Category', 'Price'])
     const row = screen.getByText('ELEC001').closest('tr')!
     const cells = within(row).getAllByRole('cell')
     expect(cells[headers.indexOf('Category')]).toHaveTextContent('Electronics')
@@ -178,7 +174,11 @@ describe('ProductsPage', () => {
       .find((element) => element.textContent === 'All')!
     await userEvent.click(categorySelect)
     const listbox = screen.getByRole('listbox')
-    expect(within(listbox).getAllByRole('option').map((o) => o.textContent)).toEqual(['All', 'Audio', 'Electronics'])
+    expect(
+      within(listbox)
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+    ).toEqual(['All', 'Audio', 'Electronics'])
     await userEvent.click(within(listbox).getByRole('option', { name: 'Audio' }))
     await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }))
 
@@ -232,8 +232,7 @@ describe('ProductsPage', () => {
       errors: [{ line: 4, sku: 'BAD01', field: 'price', rejectedValue: '-1', message: 'Price must be positive' }]
     }
 
-    const uploadCsv = () =>
-      userEvent.upload(screen.getByTestId('csv-input'), new File(['sku,name\n'], 'products.csv', { type: 'text/csv' }))
+    const uploadCsv = () => userEvent.upload(screen.getByTestId('csv-input'), new File(['sku,name\n'], 'products.csv', { type: 'text/csv' }))
 
     it('uploads the file, shows the loader and then the result modal', async () => {
       let uploadedBody = ''
@@ -267,7 +266,7 @@ describe('ProductsPage', () => {
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     })
 
-    it('shows the backend error on screen when the import fails', async () => {
+    it('shows the backend errors in the result modal when the import fails', async () => {
       mockSearch()
       server.use(
         http.post(IMPORT_URL, () =>
@@ -276,8 +275,18 @@ describe('ProductsPage', () => {
               statusCode: 422,
               response: 'Unprocessable Content',
               timestamp: '2026-11-11T00:00:00Z',
-              error: 'Ingestion error',
-              errorDetails: [{ message: 'Line 2: price must be positive' }, { message: 'Line 3: sku is required' }]
+              error: 'CsvIngestionRejectedException: Ingestion error',
+              errorDetails: [
+                {
+                  field: 'row[2]',
+                  message: 'Batch persistence failed: ERROR: new row for relation "products" violates check constraint "chk_sku"\n  Detail: x'
+                },
+                {
+                  field: 'row[3]',
+                  message: 'Batch persistence failed: ERROR: new row for relation "products" violates check constraint "chk_sku"\n  Detail: x'
+                },
+                { field: 'row[4].price', rejectedValue: 'free', message: 'Value must be a decimal number.' }
+              ]
             },
             { status: 422 }
           )
@@ -287,14 +296,16 @@ describe('ProductsPage', () => {
       await screen.findByText('ELEC001')
       await uploadCsv()
 
-      const alert = await screen.findByText('Ingestion error')
-      const container = alert.closest('[role="alert"]') as HTMLElement
-      expect(within(container).getByText('Line 2: price must be positive')).toBeInTheDocument()
-      expect(within(container).getByText('Line 3: sku is required')).toBeInTheDocument()
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      const dialog = await screen.findByRole('dialog', { name: 'CSV import result' })
+      expect(within(dialog).getByText('Ingestion error')).toBeInTheDocument()
+      expect(within(dialog).getByText('Rows with errors').nextSibling).toHaveTextContent('3')
+      expect(within(dialog).getByText('2–3')).toBeInTheDocument()
+      expect(within(dialog).getByText('The row could not be saved: it violates the "chk_sku" rule.')).toBeInTheDocument()
+      expect(within(dialog).getByText('free')).toBeInTheDocument()
+      expect(within(dialog).getByText('Value must be a decimal number.')).toBeInTheDocument()
 
-      await userEvent.click(within(container).getByRole('button', { name: /close/i }))
-      expect(screen.queryByText('Ingestion error')).not.toBeInTheDocument()
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     })
 
     it('shows a generic error when the server is unreachable and still refreshes the table', async () => {
@@ -461,9 +472,7 @@ describe('ProductsPage', () => {
       await fillForm(dialog, { SKU: 'AB-1', 'Price ($)': '0' })
       await userEvent.click(within(dialog).getByRole('button', { name: 'Create product' }))
 
-      expect(
-        await within(dialog).findByText('SKU must have 1 to 10 characters, only uppercase letters and digits')
-      ).toBeInTheDocument()
+      expect(await within(dialog).findByText('SKU must have 1 to 10 characters, only uppercase letters, digits and hyphens')).toBeInTheDocument()
       expect(within(dialog).getByText('Price must be greater than zero')).toBeInTheDocument()
       expect(calls).toHaveLength(0)
     })
@@ -475,11 +484,11 @@ describe('ProductsPage', () => {
       await fillForm(dialog, { Category: '' })
       await userEvent.click(within(dialog).getByRole('combobox', { name: 'Category' }))
       const listbox = screen.getByRole('listbox')
-      expect(within(listbox).getAllByRole('option').map((o) => o.textContent)).toEqual([
-        'Select a category',
-        'Audio',
-        'Electronics'
-      ])
+      expect(
+        within(listbox)
+          .getAllByRole('option')
+          .map((o) => o.textContent)
+      ).toEqual(['Select a category', 'Audio', 'Electronics'])
       await userEvent.keyboard('{Escape}')
       await userEvent.click(within(dialog).getByRole('button', { name: 'Create product' }))
 

@@ -1,4 +1,5 @@
 import Alert from '@mui/material/Alert'
+import AlertTitle from '@mui/material/AlertTitle'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -13,11 +14,57 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import type { CsvImportReport } from '../api/product.dto'
+import { formatRowRanges, type CsvImportFailure } from '../util/product.utils'
 
 interface ProductImportResultDialogProps {
   readonly report: CsvImportReport | null
+  readonly failure?: CsvImportFailure | null
   readonly onClose: () => void
 }
+
+const FailureContent = ({ failure }: { readonly failure: CsvImportFailure }) => (
+  <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <Alert severity='error'>
+      <AlertTitle sx={{ mb: failure.errors.length > 0 ? undefined : 0 }}>{failure.message}</AlertTitle>
+      {failure.errors.length > 0 && 'The file was rejected and no products were imported. Fix the errors below and try again.'}
+    </Alert>
+    {failure.rejectedRows > 0 && (
+      <Box>
+        <Typography variant='caption' color='text.secondary'>
+          Rows with errors
+        </Typography>
+        <Typography variant='h6'>{failure.rejectedRows}</Typography>
+      </Box>
+    )}
+    {failure.errors.length > 0 && (
+      <>
+        <Typography variant='subtitle2'>Errors</Typography>
+        <TableContainer sx={{ maxHeight: 400 }}>
+          <Table size='small' stickyHeader aria-label='import errors'>
+            <TableHead>
+              <TableRow>
+                <TableCell>Rows</TableCell>
+                <TableCell>Field</TableCell>
+                <TableCell>Value</TableCell>
+                <TableCell>Message</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {failure.errors.map((error, index) => (
+                <TableRow key={index}>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{error.rows.length > 0 ? formatRowRanges(error.rows) : '—'}</TableCell>
+                  <TableCell>{error.field ?? '—'}</TableCell>
+                  <TableCell>{error.rejectedValue ?? '—'}</TableCell>
+                  <TableCell>{error.message}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </>
+    )}
+  </DialogContent>
+)
 
 const summaryOf = (report: CsvImportReport): ReadonlyArray<[string, number]> => [
   ['Total rows', report.totalRows],
@@ -32,8 +79,8 @@ const resultAlert = (report: CsvImportReport) => {
   return <Alert severity='success'>The import finished successfully.</Alert>
 }
 
-export const ProductImportResultDialog = ({ report, onClose }: ProductImportResultDialogProps) => (
-  <Dialog open={report !== null} onClose={onClose} fullWidth maxWidth='md' aria-labelledby='product-import-result-title'>
+export const ProductImportResultDialog = ({ report, failure = null, onClose }: ProductImportResultDialogProps) => (
+  <Dialog open={report !== null || failure !== null} onClose={onClose} fullWidth maxWidth='md' aria-labelledby='product-import-result-title'>
     <DialogTitle id='product-import-result-title'>CSV import result</DialogTitle>
     {report && (
       <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -87,6 +134,7 @@ export const ProductImportResultDialog = ({ report, onClose }: ProductImportResu
         )}
       </DialogContent>
     )}
+    {!report && failure && <FailureContent failure={failure} />}
     <DialogActions>
       <Button onClick={onClose} variant='contained'>
         Close
