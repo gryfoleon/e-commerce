@@ -1,0 +1,24 @@
+spring:
+  web:
+    resources:
+      add-mappings: true
+  datasource:
+    url: jdbc:postgresql://localhost:5450/ecommerce-api
+    username: ecommerce-api
+    password: ecommerce-api
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6381
+
+logging:
+  config: classpath:log4j2-spring-dev.xml
+  level:
+    com.zaxxer.hikari: DEBUG

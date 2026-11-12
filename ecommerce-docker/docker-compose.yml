@@ -1,0 +1,89 @@
+networks:
+  local-net:
+    name: local-net
+  default:
+    external: true
+    name: local-net
+
+services:
+  ecommerce-api-postgres:
+    image: postgres:18.6
+    container_name: ecommerce-api-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecommerce-api
+      POSTGRES_USER: ecommerce-api
+      POSTGRES_PASSWORD: ecommerce-api
+    ports:
+      - "5450:5432"
+    volumes:
+      - ${volume}/postgresql/init_db:/docker-entrypoint-initdb.d
+      - ${volume}/postgresql/data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce-api -d ecommerce-api"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - local-net
+
+  ecommerce-api-valkey:
+    image: valkey/valkey:9.1.3
+    container_name: ecommerce-api-valkey
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    volumes:
+      - ${volume}/valkey:/data
+    command: valkey-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - local-net
+
+  ecommerce-api:
+    build:
+      context: ../ecommerce-api
+      dockerfile: Dockerfile
+    image: ecommerce-api:local
+    container_name: ecommerce-api
+    restart: unless-stopped
+    depends_on:
+      ecommerce-api-postgres:
+        condition: service_healthy
+      ecommerce-api-valkey:
+        condition: service_healthy
+    environment:
+      POSTGRESQL_HOST: ecommerce-api-postgres
+      POSTGRESQL_PORT: "5432"
+      POSTGRESQL_DBNAME: ecommerce-api
+      POSTGRESQL_USERNAME: ecommerce-api
+      POSTGRESQL_PASSWORD: ecommerce-api
+      REDIS_HOST: ecommerce-api-valkey
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081}
+      PRODUCT_CACHE_ENABLED: ${PRODUCT_CACHE_ENABLED:-true}
+    ports:
+      - "8080:8080"
+    networks:
+      - local-net
+
+  ecommerce-ui:
+    build:
+      context: ../ecommerce-ui
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8080/api
+    image: ecommerce-ui:local
+    container_name: ecommerce-ui
+    restart: unless-stopped
+    depends_on:
+      - ecommerce-api
+    ports:
+      - "8081:80"
+    networks:
+      - local-net

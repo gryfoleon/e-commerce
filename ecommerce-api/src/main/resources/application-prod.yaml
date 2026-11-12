@@ -1,0 +1,11 @@
+server:
+  compression:
+    enabled: true
+    min-response-size: 1024
+  shutdown: graceful
+
+logging:
+  level:
+    root: WARN
+    com.gryfoleon.flagger.api: INFO
+    org.springframework.security: WARN

@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce-it
+    username: test
+    password: test
+  jpa:
+    show-sql: false
+  main:
+    lazy-initialization: false
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-IT-master.yaml
+
+logging:
+  config: classpath:log4j2-spring-dev.xml

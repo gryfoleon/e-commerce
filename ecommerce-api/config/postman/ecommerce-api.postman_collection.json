@@ -1,0 +1,3798 @@
+{
+  "info": {
+    "name": "ecommerce-api - Products",
+    "description": "Coleccion del modulo de productos. /filter es el unico endpoint de busqueda: name (subcadena sin distinguir mayusculas sobre el nombre; las palabras separadas por espacio se combinan con OR; sin stemming ni tolerancia a typos) mas filtros estructurales (sku, category, minPrice/maxPrice, minStock, minWeightKg/maxWeightKg), todos opcionales y combinados con AND; sortBy admite createdAt, price y name. El detalle GET acepta solo UUID. Todas las consultas paginadas usan page, size, sortBy y sortDirection.\nbaseUrl apunta al perfil dev (puerto 8081); ajustalo si usas otro perfil. Orden: Products (genera un producto temporal y lo elimina al final) -> Import CSV (carga config/postman/E-Commerce-products.csv, ruta relativa a la raiz del repo) -> Catalog (busquedas y filtros sobre los datos del CSV).\nCategories: CRUD del catalogo product_categories (/api/v1/categories): create, get por id, get por name (case-insensitive), listado paginado (sortBy name|createdAt), update y delete; el nombre es unico sin distinguir mayusculas. Ejecutar en orden.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "Create product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse {{nameSearchToken}}\",\n  \"description\": \"Ergonomic wireless mouse {{descriptionSearchToken}}\",\n  \"category\": \"Electronics\",\n  \"price\": 24.99,\n  \"stock\": 150,\n  \"weightKg\": 0.12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Genera Idempotency-Key y SKU de 10 caracteres [A-Z0-9]; guarda productId y etag para los siguientes ejemplos."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const seed = pm.variables.replaceIn('{{$guid}}').replace(/-/g, '').toUpperCase();",
+                  "const letters = value => value.split('').map(c => String.fromCharCode(65 + parseInt(c, 16))).join('');",
+                  "pm.collectionVariables.set('productId', '');",
+                  "pm.collectionVariables.set('confirmedSku', '');",
+                  "pm.collectionVariables.set('etag', '');",
+                  "pm.collectionVariables.set('previousEtag', '');",
+                  "pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('sku', seed.slice(0, 10));",
+                  "pm.collectionVariables.set('skuFragment', seed.slice(1, 9));",
+                  "pm.collectionVariables.set('nameSearchToken', 'PMNAME' + letters(seed));",
+                  "pm.collectionVariables.set('nameSearchTypo', 'PMNAME' + letters(seed) + 'Z');",
+                  "pm.collectionVariables.set('descriptionSearchToken', 'PMDESC' + letters(seed));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set('productId', body.id);",
+                  "    pm.collectionVariables.set('confirmedSku', body.sku);",
+                  "    pm.collectionVariables.set('etag', pm.response.headers.get('ETag'));",
+                  "}",
+                  "pm.test('Valid SKU returned', () => {",
+                  "    pm.expect(body.sku).to.eql(pm.collectionVariables.get('sku'));",
+                  "    pm.expect(body.sku).to.match(/^[A-Z0-9]{1,10}$/);",
+                  "});",
+                  "pm.test('Location and ETag headers present', () => {",
+                  "    pm.response.to.have.header('Location');",
+                  "    pm.response.to.have.header('ETag');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product - idempotent replay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse {{nameSearchToken}}\",\n  \"description\": \"Ergonomic wireless mouse {{descriptionSearchToken}}\",\n  \"category\": \"Electronics\",\n  \"price\": 24.99,\n  \"stock\": 150,\n  \"weightKg\": 0.12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Mismo key y payload: reproduce la respuesta original."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Idempotent-Replayed = true', () => pm.expect(pm.response.headers.get('Idempotent-Replayed')).to.eql('true'));",
+                  "pm.test('Same product id', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('productId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product - key reused with other payload (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse {{nameSearchToken}}\",\n  \"description\": \"Ergonomic wireless mouse {{descriptionSearchToken}}\",\n  \"category\": \"Electronics\",\n  \"price\": 99.99,\n  \"stock\": 150,\n  \"weightKg\": 0.12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product - missing Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse {{nameSearchToken}}\",\n  \"description\": \"Ergonomic wireless mouse {{descriptionSearchToken}}\",\n  \"category\": \"Electronics\",\n  \"price\": 24.99,\n  \"stock\": 150,\n  \"weightKg\": 0.12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product - invalid payload (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"\",\n  \"name\": \"\",\n  \"category\": \"\",\n  \"price\": 0,\n  \"stock\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product - invalid SKU (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"BAD-SKU001\",\n  \"name\": \"Wireless Mouse\",\n  \"category\": \"Electronics\",\n  \"price\": 24.99,\n  \"stock\": 150\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "SKU admite de 1 a 10 caracteres, solo letras mayusculas y digitos; no admite guiones."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error on sku', () => pm.expect(pm.response.json().errorDetails.map(e => e.field)).to.include('sku'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product - duplicate SKU (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse {{nameSearchToken}}\",\n  \"description\": \"Ergonomic wireless mouse {{descriptionSearchToken}}\",\n  \"category\": \"Electronics\",\n  \"price\": 24.99,\n  \"stock\": 150,\n  \"weightKg\": 0.12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Duplicate SKU field', () => pm.expect(pm.response.json().errorDetails.map(e => e.field)).to.include('sku'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product by UUID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('etag', pm.response.headers.get('ETag'));",
+                  "pm.test('Has ETag', () => pm.response.to.have.header('ETag'));",
+                  "pm.test('Detail Cache-Control', () => {",
+                  "    const cache = pm.response.headers.get('Cache-Control');",
+                  "    pm.expect(cache).to.include('public');",
+                  "    pm.expect(cache).to.include('max-age=60');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product - SKU is not a UUID (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{sku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{sku}}"
+              ]
+            },
+            "description": "The detail endpoint only accepts UUIDs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product - unknown UUID (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "Well-formed UUID that does not exist."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product - not modified (304)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "{{etag}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 304', () => pm.response.to.have.status(304));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter created product - combined inclusive bounds",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku={{skuFragment}}&category=electronics&minPrice=24.99&maxPrice=24.99&minStock=150&minWeightKg=0.12&maxWeightKg=0.12&size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "{{skuFragment}}"
+                },
+                {
+                  "key": "category",
+                  "value": "electronics"
+                },
+                {
+                  "key": "minPrice",
+                  "value": "24.99"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "24.99"
+                },
+                {
+                  "key": "minStock",
+                  "value": "150"
+                },
+                {
+                  "key": "minWeightKg",
+                  "value": "0.12"
+                },
+                {
+                  "key": "maxWeightKg",
+                  "value": "0.12"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Con el producto creado, verifica coincidencia parcial de SKU, categoria sin distinguir mayusculas y limites inclusivos combinados con AND."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Created product matches all inclusive filters', () => {",
+                  "    pm.expect(body.content.map(p => p.id)).to.include(pm.collectionVariables.get('productId'));",
+                  "    body.content.forEach(p => {",
+                  "        pm.expect(p.sku).to.include(pm.collectionVariables.get('skuFragment'));",
+                  "        pm.expect(p.category).to.eql('Electronics');",
+                  "        pm.expect(p.price).to.eql(24.99);",
+                  "        pm.expect(p.stock).to.be.at.least(150);",
+                  "        pm.expect(p.weightKg).to.eql(0.12);",
+                  "    });",
+                  "});",
+                  "pm.test('Filter Cache-Control', () => {",
+                  "    const cache = pm.response.headers.get('Cache-Control');",
+                  "    pm.expect(cache).to.include('public');",
+                  "    pm.expect(cache).to.include('max-age=30');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter created product by name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name={{nameSearchToken}}&size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{nameSearchToken}}"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Busca con name el termino unico incluido en el nombre del producto creado (subcadena sin distinguir mayusculas)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Created product found by name', () => pm.expect(body.content.map(p => p.id)).to.include(pm.collectionVariables.get('productId')));",
+                  "pm.test('Filter Cache-Control', () => {",
+                  "    const cache = pm.response.headers.get('Cache-Control');",
+                  "    pm.expect(cache).to.include('public');",
+                  "    pm.expect(cache).to.include('max-age=30');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter created product - name + structured filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name={{nameSearchToken}}&sku={{skuFragment}}&category=electronics&minPrice=24.99&maxPrice=24.99&minStock=150&minWeightKg=0.12&maxWeightKg=0.12",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{nameSearchToken}}"
+                },
+                {
+                  "key": "sku",
+                  "value": "{{skuFragment}}"
+                },
+                {
+                  "key": "category",
+                  "value": "electronics"
+                },
+                {
+                  "key": "minPrice",
+                  "value": "24.99"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "24.99"
+                },
+                {
+                  "key": "minStock",
+                  "value": "150"
+                },
+                {
+                  "key": "minWeightKg",
+                  "value": "0.12"
+                },
+                {
+                  "key": "maxWeightKg",
+                  "value": "0.12"
+                }
+              ]
+            },
+            "description": "Un solo request combina el texto del input principal (name) con la seccion de filtros (sku, category, rangos de precio y peso, stock), todo con AND."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Created product matches name and every filter', () => {",
+                  "    pm.expect(body.content.map(p => p.id)).to.eql([pm.collectionVariables.get('productId')]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by name has no typo fallback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name={{nameSearchTypo}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{nameSearchTypo}}"
+                }
+              ]
+            },
+            "description": "El termino difiere del nombre por un caracter; no hay busqueda aproximada de respaldo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Typo does not match created product', () => pm.expect(pm.response.json().content.map(p => p.id)).not.to.include(pm.collectionVariables.get('productId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by name does not match product SKU",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name={{sku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{sku}}"
+                }
+              ]
+            },
+            "description": "El SKU del producto creado no aparece en su nombre y no debe coincidir con la busqueda textual."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Created product is not matched by SKU', () => pm.expect(pm.response.json().content.map(p => p.id)).not.to.include(pm.collectionVariables.get('productId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by name does not match product description",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name={{descriptionSearchToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{descriptionSearchToken}}"
+                }
+              ]
+            },
+            "description": "El termino aparece solo en description; name busca exclusivamente en el nombre."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Created product is not matched by description', () => pm.expect(pm.response.json().content.map(p => p.id)).not.to.include(pm.collectionVariables.get('productId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by name does not match product category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=Electronics&sortBy=createdAt&sortDirection=DESC&size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "Electronics"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "createdAt"
+                },
+                {
+                  "key": "sortDirection",
+                  "value": "DESC"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Electronics aparece en la categoria, no en el nombre del producto creado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Created product is not matched by category', () => pm.expect(pm.response.json().content.map(p => p.id)).not.to.include(pm.collectionVariables.get('productId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{etag}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse Pro\",\n  \"description\": \"Ergonomic 2.4GHz wireless mouse, v2\",\n  \"category\": \"Electronics\",\n  \"price\": 29.99,\n  \"stock\": 90,\n  \"weightKg\": 0.125\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Reemplazo completo con control de concurrencia optimista (If-Match)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    pm.collectionVariables.set('previousEtag', pm.collectionVariables.get('etag'));",
+                  "    pm.collectionVariables.set('etag', pm.response.headers.get('ETag'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product - stale If-Match (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{previousEtag}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse Pro\",\n  \"description\": \"Ergonomic 2.4GHz wireless mouse, v2\",\n  \"category\": \"Electronics\",\n  \"price\": 29.99,\n  \"stock\": 90,\n  \"weightKg\": 0.125\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product - SKU change (400)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"OTHERSKU99\",\n  \"name\": \"Wireless Mouse Pro\",\n  \"description\": \"Ergonomic 2.4GHz wireless mouse, v2\",\n  \"category\": \"Electronics\",\n  \"price\": 29.99,\n  \"stock\": 90,\n  \"weightKg\": 0.125\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product by SKU",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{etag}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{confirmedSku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{confirmedSku}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Wireless Mouse Pro\",\n  \"description\": \"Ergonomic 2.4GHz wireless mouse, v2\",\n  \"category\": \"Electronics\",\n  \"price\": 29.99,\n  \"stock\": 90,\n  \"weightKg\": 0.125\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "PUT conserva la identificacion por UUID o SKU, aunque el detalle GET solo acepta UUID."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Same product updated', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('productId')));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('etag', pm.response.headers.get('ETag'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete product by SKU",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{confirmedSku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{confirmedSku}}"
+              ]
+            },
+            "description": "DELETE tambien admite SKU y realiza una baja logica; usa el SKU confirmado por la creacion."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get deleted product (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter excludes deleted product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku={{confirmedSku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "{{confirmedSku}}"
+                }
+              ]
+            },
+            "description": "Un SKU de 10 caracteres identifica exactamente el producto creado; los productos inactivos no aparecen en /filter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No active product with this SKU', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.content).to.be.empty;",
+                  "    pm.expect(body.pageDetails.totalElements).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by name excludes deleted product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name={{nameSearchToken}}&size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{nameSearchToken}}"
+                },
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Tras el DELETE, el producto ya no aparece en la busqueda por name (la cache de consultas se invalida)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Deleted product is not returned', () => pm.expect(pm.response.json().content.map(p => p.id)).not.to.include(pm.collectionVariables.get('productId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete product - already deleted (404)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Import CSV",
+      "item": [
+        {
+          "name": "Import CSV",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/import-csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "import-csv"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "config/postman/E-Commerce-products.csv"
+                }
+              ]
+            },
+            "description": "Usa config/postman/E-Commerce-products.csv (ejecuta Postman/Newman con la raiz del repo como directorio de trabajo, o reselecciona el archivo en Body > file). El archivo incluye filas invalidas a proposito para el reporte; las demas se insertan o actualizan por SKU. Importa antes de ejecutar la carpeta Catalog: sus busquedas usan estos datos. Columnas requeridas: name, sku, category, price, stock; description y weight_kg opcionales. SKU: 1-10 caracteres [A-Z0-9]."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Import report', () => pm.expect(pm.response.json()).to.include.keys('totalRows', 'insertedRows', 'updatedRows', 'rejectedRows', 'errorsTruncated', 'aborted', 'durationMs', 'errors'));",
+                  "pm.test('Valid rows persisted and invalid rows rejected', () => { const r = pm.response.json(); pm.expect(r.rejectedRows).to.be.above(0); pm.expect(r.insertedRows + r.updatedRows).to.be.above(0); pm.expect(r.insertedRows + r.updatedRows + r.rejectedRows).to.be.at.most(r.totalRows); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import CSV - with Idempotency-Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{importIdempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/import-csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "import-csv"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "config/postman/E-Commerce-products.csv"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('importIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('importReport', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('importReport', JSON.stringify(pm.response.json()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import CSV - replay (same key and file)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{importIdempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/import-csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "import-csv"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "config/postman/E-Commerce-products.csv"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Idempotent-Replayed = true', () => pm.expect(pm.response.headers.get('Idempotent-Replayed')).to.eql('true'));",
+                  "pm.test('Same import report', () => pm.expect(pm.response.json()).to.eql(JSON.parse(pm.collectionVariables.get('importReport'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import CSV - missing file (400)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/import-csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "import-csv"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "other",
+                  "type": "text",
+                  "value": "no file"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Catalog (filter & name search)",
+      "item": [
+        {
+          "name": "Filter products - no filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ]
+            },
+            "description": "Sin filtros, devuelve productos activos con page=0, size=20 y orden por createdAt DESC."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Default pagination', () => {",
+                  "    pm.expect(body.content).to.be.an('array');",
+                  "    pm.expect(body.pageDetails).to.include({ page: 0, size: 20 });",
+                  "});",
+                  "pm.test('Filter Cache-Control', () => {",
+                  "    const cache = pm.response.headers.get('Cache-Control');",
+                  "    pm.expect(cache).to.include('public');",
+                  "    pm.expect(cache).to.include('max-age=30');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - all filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku=MS0&category=Electronics&minPrice=10.00&maxPrice=150.00&minStock=1&minWeightKg=0.05&maxWeightKg=2&sortBy=price&sortDirection=ASC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "MS0"
+                },
+                {
+                  "key": "category",
+                  "value": "Electronics"
+                },
+                {
+                  "key": "minPrice",
+                  "value": "10.00"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "150.00"
+                },
+                {
+                  "key": "minStock",
+                  "value": "1"
+                },
+                {
+                  "key": "minWeightKg",
+                  "value": "0.05"
+                },
+                {
+                  "key": "maxWeightKg",
+                  "value": "2"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "price"
+                },
+                {
+                  "key": "sortDirection",
+                  "value": "ASC"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400. sku is a contains match of 3-10 chars [A-Z0-9]."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Page structure', () => { pm.expect(b).to.have.property('content'); pm.expect(b.pageDetails).to.include.keys('page','size','totalPages','totalElements','isLast'); });",
+                  "pm.test('Every result matches all filters', () => b.content.forEach(p => {",
+                  "    pm.expect(p.sku).to.include('MS0');",
+                  "    pm.expect(p.category).to.eql('Electronics');",
+                  "    pm.expect(p.price).to.be.within(10, 150);",
+                  "    pm.expect(p.stock).to.be.at.least(1);",
+                  "    pm.expect(p.weightKg).to.be.a('number').and.within(0.05, 2);",
+                  "}));",
+                  "pm.test('Sorted by price ASC', () => { const prices = b.content.map(p => p.price); pm.expect(prices).to.eql([...prices].sort((a, b) => a - b)); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - by SKU fragment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku=ELEC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "ELEC"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Page structure', () => { pm.expect(b).to.have.property('content'); pm.expect(b.pageDetails).to.include.keys('page','size','totalPages','totalElements','isLast'); });",
+                  "pm.test('Each SKU contains the fragment', () => b.content.forEach(p => pm.expect(p.sku).to.include('ELEC')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - by stock and weight",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?minStock=10&maxWeightKg=1.5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "minStock",
+                  "value": "10"
+                },
+                {
+                  "key": "maxWeightKg",
+                  "value": "1.5"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Page structure', () => { pm.expect(b).to.have.property('content'); pm.expect(b.pageDetails).to.include.keys('page','size','totalPages','totalElements','isLast'); });",
+                  "pm.test('Minimum stock and maximum weight', () => b.content.forEach(p => {",
+                  "    pm.expect(p.stock).to.be.at.least(10);",
+                  "    pm.expect(p.weightKg).to.be.a('number').and.at.most(1.5);",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - minimum stock zero",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?minStock=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "minStock",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "minStock=0 admite productos sin stock."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Stock is nonnegative', () => pm.response.json().content.forEach(p => pm.expect(p.stock).to.be.at.least(0)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - no results (200 empty)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?minPrice=0&maxPrice=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "minPrice",
+                  "value": "0"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "El rango de precio 0-0 es valido pero ningun producto tiene precio cero; devuelve una pagina vacia."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Page structure', () => { pm.expect(b).to.have.property('content'); pm.expect(b.pageDetails).to.include.keys('page','size','totalPages','totalElements','isLast'); });",
+                  "pm.test('Empty page', () => { pm.expect(b.content).to.have.lengthOf(0); pm.expect(b.pageDetails.totalElements).to.eql(0); });"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 - pagina de filtros vacia",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/products/filter?minPrice=0&maxPrice=0"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "max-age=30, public"
+                }
+              ],
+              "body": "{\n  \"pageDetails\": {\n    \"page\": 0,\n    \"size\": 20,\n    \"totalPages\": 0,\n    \"totalElements\": 0,\n    \"isLast\": true\n  },\n  \"content\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "Filter products - empty SKU fragment (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Un SKU omitido no filtra, pero un fragmento vacio es invalido."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error on sku', () => pm.expect(pm.response.json().errorDetails.map(e => e.field)).to.include('sku'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - sku too short (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku=EL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "EL"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "400 - fragmento SKU demasiado corto",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/products/filter?sku=EL"
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"statusCode\": 400,\n  \"response\": \"Bad Request\",\n  \"timestamp\": \"2026-01-01T12:00:00-0600\",\n  \"requestDetails\": {\n    \"requestPath\": \"/ecommerce-api/api/v1/products/filter\",\n    \"requestMethod\": \"GET\"\n  },\n  \"error\": \"MethodArgumentNotValidException: Validation error\",\n  \"errorDetails\": [\n    {\n      \"field\": \"sku\",\n      \"rejectedValue\": \"EL\",\n      \"message\": \"SKU filter must have 3 to 10 characters, only uppercase letters and digits\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Filter products - SKU fragment too long (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku=ABCDEFGHIJK",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "ABCDEFGHIJK"
+                }
+              ]
+            },
+            "description": "El fragmento debe tener entre 3 y 10 caracteres [A-Z0-9]."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error on sku', () => pm.expect(pm.response.json().errorDetails.map(e => e.field)).to.include('sku'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - lowercase sku (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sku=elec",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "elec"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - unknown category (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?category=UNKNOWNPOSTMANCATEGORY",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "UNKNOWNPOSTMANCATEGORY"
+                }
+              ]
+            },
+            "description": "La categoria debe existir en el catalogo; la comparacion es exacta y sin distinguir mayusculas."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error on category', () => pm.expect(pm.response.json().errorDetails.map(e => e.field)).to.include('category'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - inverted price range (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?minPrice=100&maxPrice=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "minPrice",
+                  "value": "100"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - inverted weight range (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?minWeightKg=2&maxWeightKg=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "minWeightKg",
+                  "value": "2"
+                },
+                {
+                  "key": "maxWeightKg",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "El peso minimo no puede ser mayor que el maximo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - negative weight (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?minWeightKg=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "minWeightKg",
+                  "value": "-1"
+                }
+              ]
+            },
+            "description": "Structured filters combined with AND. Only active products. sortBy: createdAt (default DESC), price, name. Unknown query parameters return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - unknown parameter (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?foo=1&name=mouse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "foo",
+                  "value": "1"
+                },
+                {
+                  "key": "name",
+                  "value": "mouse"
+                }
+              ]
+            },
+            "description": "Un parametro fuera de contrato se rechaza con 400 aunque name sea valido."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Unsupported parameter identified', () => pm.expect(pm.response.json().errorDetails.some(e => e.field === 'queryParameter' && e.rejectedValue === 'foo')).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=speaker",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "speaker"
+                }
+              ]
+            },
+            "description": "Busqueda del input principal: subcadena sin distinguir mayusculas sobre name (datos de E-Commerce-products.csv). Sin sortBy el orden es createdAt DESC."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Matches speaker products', () => {",
+                  "    pm.expect(body.content.map(p => p.sku)).to.include.members(['BS021', 'BS099', 'SS022']);",
+                  "    body.content.forEach(p => pm.expect(p.name.toLowerCase()).to.include('speaker'));",
+                  "});",
+                  "pm.test('Filter Cache-Control', () => {",
+                  "    const cache = pm.response.headers.get('Cache-Control');",
+                  "    pm.expect(cache).to.include('public');",
+                  "    pm.expect(cache).to.include('max-age=30');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name partial match (substring)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=shoe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "shoe"
+                }
+              ]
+            },
+            "description": "Coincidencia parcial: shoe es subcadena de Running Shoes (ILIKE '%shoe%'), sin distinguir mayusculas."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const skus = () => pm.response.json().content.map(p => p.sku);",
+                  "pm.test('Substring matches Running Shoes', () => pm.expect(skus()).to.include.members(['RS001', 'RS050']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name + category and price (UI filters)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=running&category=footwear&maxPrice=60",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "running"
+                },
+                {
+                  "key": "category",
+                  "value": "footwear"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "60"
+                }
+              ]
+            },
+            "description": "Nombre + seccion de filtros: Running Shoes de Footwear hasta 60.00 -> solo RS050 (RS001 cuesta 89.99)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const skus = () => pm.response.json().content.map(p => p.sku);",
+                  "pm.test('Only RS050 matches', () => pm.expect(skus()).to.eql(['RS050']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name + stock and weight",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=speaker&minStock=250&maxWeightKg=0.2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "speaker"
+                },
+                {
+                  "key": "minStock",
+                  "value": "250"
+                },
+                {
+                  "key": "maxWeightKg",
+                  "value": "0.2"
+                }
+              ]
+            },
+            "description": "Speakers con stock >= 250 y peso <= 0.2 kg: BS099 y SS022."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Name and structured filters combined', () => {",
+                  "    pm.expect(body.content.map(p => p.sku).sort()).to.eql(['BS099', 'SS022']);",
+                  "    body.content.forEach(p => { pm.expect(p.stock).to.be.at.least(250); pm.expect(p.weightKg).to.be.at.most(0.2); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name sorted by price",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=bluetooth%20speaker&sortBy=price&sortDirection=asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "bluetooth%20speaker"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "price"
+                },
+                {
+                  "key": "sortDirection",
+                  "value": "asc"
+                }
+              ]
+            },
+            "description": "sortBy admite createdAt, price y name. Con las palabras bluetooth OR speaker, BS099 (24.99) va antes que BS021 (59.99)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const prices = pm.response.json().content.map(p => p.price);",
+                  "pm.test('Sorted by price ASC', () => pm.expect(prices).to.eql([...prices].sort((a, b) => a - b)));",
+                  "pm.test('Bluetooth speakers', () => pm.expect(pm.response.json().content.map(p => p.sku)).to.include.members(['BS099', 'BS021']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name with sortBy relevance (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=speaker&sortBy=relevance&sortDirection=desc&size=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "speaker"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "relevance"
+                },
+                {
+                  "key": "sortDirection",
+                  "value": "desc"
+                },
+                {
+                  "key": "size",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "relevance ya no existe (no hay ranking de texto): solo createdAt, price y name."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('sortBy error', () => pm.expect(JSON.stringify(pm.response.json())).to.include('sortBy'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name prefix ignoring case",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=SPEAK",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "SPEAK"
+                }
+              ]
+            },
+            "description": "Prefijo parcial en mayusculas: SPEAK encuentra Bluetooth Speaker y Shower Speaker (ILIKE '%speak%')."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const skus = () => pm.response.json().content.map(p => p.sku);",
+                  "pm.test('Prefix matches speakers', () => pm.expect(skus()).to.include.members(['BS021', 'BS099', 'SS022']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name with several words (OR)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=cable%20charger",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "cable%20charger"
+                }
+              ]
+            },
+            "description": "Las palabras separadas por espacio se combinan con OR. Cable (UC003) o Charger (PB016, WC028)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const skus = () => pm.response.json().content.map(p => p.sku);",
+                  "pm.test('Either term matches', () => pm.expect(skus()).to.include.members(['UC003', 'PB016', 'WC028']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name wildcard characters are literal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=%25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "%25"
+                }
+              ]
+            },
+            "description": "% y _ se escapan: no actuan como comodin LIKE. Ningun nombre del CSV contiene %, asi que la pagina esta vacia."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty page', () => pm.expect(pm.response.json().content).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name with SQL-like input is harmless",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=Robert%27)%3B%20DROP%20TABLE%20products%3B--",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "Robert%27)%3B%20DROP%20TABLE%20products%3B--"
+                }
+              ]
+            },
+            "description": "La entrada se interpreta como texto (parametro enlazado, comodines escapados): 200 y encuentra SQL001, sin error ni efecto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const skus = () => pm.response.json().content.map(p => p.sku);",
+                  "pm.test('Matches SQL001 as plain text', () => pm.expect(skus()).to.include('SQL001'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name does not match SKU",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=RS001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "RS001"
+                }
+              ]
+            },
+            "description": "name solo busca en el nombre: un SKU no coincide."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty page', () => pm.expect(pm.response.json().content).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name does not match category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=Footwear",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "Footwear"
+                }
+              ]
+            },
+            "description": "name solo busca en el nombre: la categoria no coincide (usa category para eso)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty page', () => pm.expect(pm.response.json().content).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name does not match description",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=lightweight",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "lightweight"
+                }
+              ]
+            },
+            "description": "lightweight solo aparece en la descripcion de RS001."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty page', () => pm.expect(pm.response.json().content).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name has no typo fallback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=runnng",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "runnng"
+                }
+              ]
+            },
+            "description": "Sin busqueda aproximada de respaldo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty page', () => pm.expect(pm.response.json().content).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name no results (200 empty)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=zzzz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "zzzz"
+                }
+              ]
+            },
+            "description": "Ningun nombre contiene el texto: pagina vacia, 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty page with zero totals', () => { const b = pm.response.json(); pm.expect(b.content).to.eql([]); pm.expect(b.pageDetails.totalElements).to.eql(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - blank name is ignored",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=%20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "%20"
+                }
+              ]
+            },
+            "description": "Un name en blanco se trata como ausente: se devuelven los productos activos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Not empty', () => pm.expect(pm.response.json().pageDetails.totalElements).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - name too long (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ]
+            },
+            "description": "name admite como maximo 100 caracteres."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - sortBy relevance without name (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?sortBy=relevance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "relevance"
+                }
+              ]
+            },
+            "description": "relevance ya no existe: solo createdAt, price y name."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('sortBy error', () => pm.expect(JSON.stringify(pm.response.json())).to.include('sortBy'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter products - invalid sortBy with name (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/filter?name=speaker&sortBy=popularity",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "filter"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "speaker"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "popularity"
+                }
+              ]
+            },
+            "description": "sortBy desconocido."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "Create category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{categoryName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Genera un nombre unico y guarda categoryId para los siguientes ejemplos."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.variables.replaceIn('{{$guid}}').replace(/-/g, '').slice(0, 12);",
+                  "pm.collectionVariables.set('categoryName', 'PM Category ' + suffix);",
+                  "pm.collectionVariables.set('categoryNameUpdated', 'PM Category Updated ' + suffix);",
+                  "pm.collectionVariables.set('categoryId', '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('categoryId', body.id);",
+                  "pm.test('Category returned', () => {",
+                  "    pm.expect(body.name).to.eql(pm.collectionVariables.get('categoryName'));",
+                  "    pm.expect(body.id).to.be.a('number');",
+                  "    pm.expect(body.createdAt).to.be.a('string');",
+                  "});",
+                  "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location')).to.include('/categories/' + body.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create category - duplicate name, different case (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{dupName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "El nombre es unico sin distinguir mayusculas; reenvia el mismo nombre."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('dupName', pm.collectionVariables.get('categoryName').toUpperCase());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Duplicate name field', () => pm.expect(pm.response.json().errorDetails.map(e => e.field)).to.include('name'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create category - blank name (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create category - name too long (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get category by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Matches created category', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.id).to.eql(Number(pm.collectionVariables.get('categoryId')));",
+                  "    pm.expect(body.name).to.eql(pm.collectionVariables.get('categoryName'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get category - id is not a number (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "abc"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get category - unknown id (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/32000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "32000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get category by name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/name/{{categoryName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "name",
+                "{{categoryName}}"
+              ]
+            },
+            "description": "Coincidencia exacta sin distinguir mayusculas."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Matches created category', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.id).to.eql(Number(pm.collectionVariables.get('categoryId')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get category by name - unknown (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/name/Does Not Exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "name",
+                "Does Not Exist"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "description": "Sin parametros: page=0, size=20, orden por name ASC."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Default pagination', () => {",
+                  "    pm.expect(body.content).to.be.an('array');",
+                  "    pm.expect(body.pageDetails).to.include({ page: 0, size: 20 });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List categories - paginated and sorted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories?page=0&size=5&sortBy=createdAt&sortDirection=DESC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "5"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "createdAt"
+                },
+                {
+                  "key": "sortDirection",
+                  "value": "DESC"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Page size respected', () => {",
+                  "    pm.expect(body.pageDetails).to.include({ page: 0, size: 5 });",
+                  "    pm.expect(body.content.length).to.be.at.most(5);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List categories - invalid sortBy (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories?sortBy=price",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "price"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List categories - unknown parameter (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories?name=Books",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "Books"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{categoryNameUpdated}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Renamed', () => pm.expect(pm.response.json().name).to.eql(pm.collectionVariables.get('categoryNameUpdated')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get category by id - reflects update",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Cache evicted on update', () => pm.expect(pm.response.json().name).to.eql(pm.collectionVariables.get('categoryNameUpdated')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update category - duplicate name (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Electronics\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Electronics existe en el seed del esquema."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update category - unknown id (404)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/32000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "32000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Whatever\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update category - blank name (400)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get deleted category (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete category - already deleted (404)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{categoryId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/ecommerce-api"
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "sku",
+      "value": "ELECMS001"
+    },
+    {
+      "key": "confirmedSku",
+      "value": ""
+    },
+    {
+      "key": "skuFragment",
+      "value": "CMS"
+    },
+    {
+      "key": "nameSearchToken",
+      "value": ""
+    },
+    {
+      "key": "nameSearchTypo",
+      "value": ""
+    },
+    {
+      "key": "descriptionSearchToken",
+      "value": ""
+    },
+    {
+      "key": "etag",
+      "value": ""
+    },
+    {
+      "key": "previousEtag",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "importIdempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "importReport",
+      "value": ""
+    },
+    {
+      "key": "categoryId",
+      "value": ""
+    },
+    {
+      "key": "categoryName",
+      "value": ""
+    },
+    {
+      "key": "categoryNameUpdated",
+      "value": ""
+    }
+  ]
+}

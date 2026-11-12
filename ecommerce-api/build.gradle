@@ -1,0 +1,163 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.2'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'jacoco'
+}
+
+group = 'com.gila.api'
+version = '0.0.1-SNAPSHOT'
+description = 'Ecommerce API'
+
+def jacocoExcludes = [
+		'**/*ApplicationKt.class',
+		'**/config/**',
+		'**/dto/**',
+		'**/model/**',
+		'**/domain/**',
+		'**/exception/**'
+]
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+springBoot {
+	buildInfo()
+}
+
+bootRun {
+	args = ['--spring.profiles.active=dev']
+}
+
+jacoco {
+	toolVersion = "0.8.14"
+}
+
+sourceSets {
+	integrationTest {
+		compileClasspath += sourceSets.main.output
+		runtimeClasspath += sourceSets.main.output
+	}
+}
+
+configurations {
+	configureEach {
+		exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+	}
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+	integrationTestCompile.extendsFrom testCompile
+	integrationTestImplementation.extendsFrom implementation, testImplementation
+	integrationTestCompileOnly.extendsFrom testCompileOnly
+	integrationTestAnnotationProcessor.extendsFrom testAnnotationProcessor
+	integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'org.springframework.boot:spring-boot-starter-liquibase'
+	implementation 'org.springframework.boot:spring-boot-starter-log4j2'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0'
+	implementation 'org.apache.commons:commons-csv:1.14.1'
+
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	annotationProcessor 'org.projectlombok:lombok'
+	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-redis-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-liquibase-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
+
+	testCompileOnly 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	doFirst {
+		systemProperty 'spring.profiles.active', 'test'
+	}
+	maxParallelForks 3
+	finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.named('jacocoTestReport', JacocoReport) {
+	dependsOn tasks.named('test')
+	group = 'verification'
+	description = 'Generate JaCoCo coverage report for unit tests.'
+
+	reports {
+		xml.required = true
+		xml.outputLocation = layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.xml')
+		html.outputLocation = layout.buildDirectory.dir('reports/jacoco/test/html')
+		csv.required = false
+	}
+
+	sourceDirectories.setFrom(files(sourceSets.main.allSource.srcDirs))
+	classDirectories.setFrom(files(sourceSets.main.output).collect {
+		fileTree(dir: it, excludes: jacocoExcludes)
+	})
+
+	getExecutionData().setFrom(fileTree(layout.buildDirectory).include("/jacoco/test.exec"))
+}
+
+tasks.register('integrationTest', Test) {
+	description = 'Runs integration tests.'
+	group = 'verification'
+
+	testClassesDirs = sourceSets.integrationTest.output.classesDirs
+	classpath = sourceSets.integrationTest.runtimeClasspath
+	useJUnitPlatform()
+	shouldRunAfter(tasks.named('test'))
+	doFirst {
+		systemProperty 'spring.profiles.active', 'IT'
+	}
+	finalizedBy tasks.named('jacocoIntegrationTestReport')
+}
+
+tasks.register('jacocoIntegrationTestReport', JacocoReport) {
+	dependsOn tasks.named('integrationTest')
+	group = 'verification'
+	description = 'Generate JaCoCo coverage report for integration tests.'
+
+	reports {
+		xml.required = true
+		xml.outputLocation = layout.buildDirectory.file('reports/jacoco/integrationTest/jacocoIntegrationTestReport.xml')
+		html.outputLocation = layout.buildDirectory.dir('reports/jacoco/integrationTest/html')
+		csv.required = false
+	}
+
+	sourceDirectories.setFrom(files(sourceSets.main.allSource.srcDirs))
+	classDirectories.setFrom(files(sourceSets.main.output).collect {
+		fileTree(dir: it, excludes: jacocoExcludes)
+	})
+
+	executionData.setFrom(fileTree(dir: layout.buildDirectory, includes: ['jacoco/integrationTest.exec']))
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('test'), tasks.named('integrationTest')
+}
